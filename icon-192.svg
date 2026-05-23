@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
+  <rect width="192" height="192" rx="40" fill="#000814"/>
+  <!-- Main bubble -->
+  <circle cx="96" cy="96" r="70" fill="rgba(0,255,238,0.08)" stroke="#00ffee" stroke-width="3"/>
+  <!-- Iridescent ring -->
+  <circle cx="96" cy="96" r="65" fill="none" stroke="rgba(204,51,255,0.25)" stroke-width="6"/>
+  <!-- Specular highlight -->
+  <ellipse cx="74" cy="68" rx="22" ry="13" fill="rgba(255,255,255,0.35)"/>
+  <!-- Number -->
+  <text x="96" y="110" font-family="monospace" font-size="68" font-weight="bold"
+        fill="white" text-anchor="middle" dominant-baseline="middle"
+        filter="url(#glow)">7</text>
+  <!-- Small bubbles -->
+  <circle cx="32" cy="155" r="18" fill="rgba(204,51,255,0.1)" stroke="#cc33ff" stroke-width="2.5"/>
+  <circle cx="162" cy="42"  r="14" fill="rgba(255,34,68,0.1)"  stroke="#ff2244" stroke-width="2"/>
+  <circle cx="155" cy="158" r="12" fill="rgba(255,170,0,0.1)"  stroke="#ffaa00" stroke-width="2"/>
+  <defs>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+</svg>
