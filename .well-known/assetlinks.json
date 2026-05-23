@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "com.kibuglobal.bubblesurge",
+        "sha256_cert_fingerprints": ["D5:8C:5F:6D:C4:81:40:7E:B1:C4:7D:5A:E9:9F:42:0B:A3:1F:41:87:01:B3:4A:AD:B3:87:0B:6D:82:43:AC:31"]
+      }
+    }]
