@@ -168,6 +168,45 @@ body{display:flex;align-items:stretch;justify-content:center}
   opacity:0;transition:opacity .3s;z-index:10;white-space:nowrap;
 }
 
+/* Lives */
+.lives-row{display:flex;gap:5px;align-items:center}
+.life-bub{
+  width:18px;height:18px;border-radius:50%;
+  border:2px solid #00ffee;
+  background:rgba(0,255,238,0.18);
+  box-shadow:0 0 8px rgba(0,255,238,0.5);
+  transition:all .3s;
+  position:relative;overflow:hidden;
+}
+.life-bub::after{
+  content:'';position:absolute;top:2px;left:3px;
+  width:5px;height:3px;border-radius:50%;
+  background:rgba(255,255,255,0.6);
+}
+.life-bub.lost{
+  background:rgba(255,34,68,0.1);
+  border-color:rgba(255,34,68,0.3);
+  box-shadow:none;
+}
+.life-bub.lost::after{display:none}
+
+/* Miss flash overlay */
+#miss-flash{
+  position:absolute;inset:0;pointer-events:none;z-index:20;
+  background:rgba(255,34,68,0);transition:background .15s;
+}
+#miss-flash.flash{background:rgba(255,34,68,0.22);}
+
+/* Miss toast */
+#miss-toast{
+  position:absolute;left:50%;transform:translateX(-50%);
+  top:50%;margin-top:-20px;
+  pointer-events:none;
+  font-size:22px;font-weight:900;letter-spacing:4px;
+  color:#ff2244;text-shadow:0 0 24px #ff2244;
+  opacity:0;transition:opacity .2s;z-index:15;white-space:nowrap;
+}
+
 /* ══ GAME OVER ════════════════════════════════════════ */
 #go-screen{
   flex:1;display:flex;flex-direction:column;
@@ -255,6 +294,7 @@ body{display:flex;align-items:stretch;justify-content:center}
 
   <!-- ══ PLAYING ════════════════════════════════════════ -->
   <div id="play-wrap" style="display:none">
+    <div id="miss-flash"></div>
     <div class="hud">
       <div class="hud-col">
         <div class="hud-lbl">SCORE</div>
@@ -265,7 +305,14 @@ body{display:flex;align-items:stretch;justify-content:center}
         <div class="hud-val" id="h-level" style="color:#2277ff;text-shadow:0 0 14px #2277ff">1</div>
         <div class="combo-badge" id="combo-badge">×2 COMBO</div>
       </div>
-      <button class="end-btn" onclick="endGame()">END</button>
+      <div class="hud-col" style="text-align:center">
+        <div class="hud-lbl">LIVES</div>
+        <div class="lives-row" id="lives-row">
+          <div class="life-bub" id="life-0"></div>
+          <div class="life-bub" id="life-1"></div>
+          <div class="life-bub" id="life-2"></div>
+        </div>
+      </div>
     </div>
 
     <div class="target-panel">
@@ -281,12 +328,16 @@ body{display:flex;align-items:stretch;justify-content:center}
       <div class="timer-bar"><div class="timer-fill" id="timer-fill" style="width:100%;background:#33ff88"></div></div>
       <div class="timer-row">
         <span id="mode-lbl" style="color:rgba(100,200,255,0.3);font-size:9px;letter-spacing:1px"></span>
-        <span id="timer-txt" style="color:#33ff88">5.0s</span>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span id="timer-txt" style="color:#33ff88">5.0s</span>
+          <button class="end-btn" onclick="endGame()">END</button>
+        </div>
       </div>
     </div>
 
     <canvas id="cv"></canvas>
     <div id="lvl-toast">LEVEL UP!</div>
+    <div id="miss-toast">MISS!</div>
   </div>
 
   <!-- ══ GAME OVER ══════════════════════════════════════ -->
@@ -322,7 +373,7 @@ const COLORS=[
   {name:'Gold',hex:'#ffdd22',r:255,g:221,b:34},
 ];
 const MODES={regular:{label:'REGULAR',minTimer:3000},expert:{label:'EXPERT',minTimer:1000}};
-const CFG={ST:5000,LEVELS:10,LVL_MS:20000,BS:900,MS:280,BV:48,MV:145,BB:10,MB:28};
+const CFG={ST:5000,LEVELS:10,LVL_MS:15000,BS:900,MS:280,BV:48,MV:145,BB:10,MB:28};
 const rgba=(c,a)=>`rgba(${c.r},${c.g},${c.b},${a})`;
 const rnd=(a,b)=>Math.random()*(b-a)+a;
 const rndI=(a,b)=>Math.floor(rnd(a,b+1));
@@ -400,6 +451,8 @@ function spawnBub(W, H, overrides={}) {
     speed:  lerp(CFG.BV,CFG.MV,t)*rnd(.7,1.3),
     wphs:rnd(0,Math.PI*2), wspd:rnd(.6,1.6), wamp:rnd(2,9),
     opacity:1, popped:false, pAge:0,
+    colorTimer: rnd(800,1400), // ms until next color shift
+    flash: 0,                  // 0-1 white flash on color change
   });
 }
 
@@ -443,7 +496,14 @@ function drawBubble(ctx,b){
   ctx.textAlign='center';ctx.textBaseline='middle';
   ctx.shadowColor=c.hex;ctx.shadowBlur=12;
   ctx.fillStyle='rgba(255,255,255,0.96)';
-  ctx.fillText(String(number),x,y+1);ctx.shadowBlur=0;ctx.restore();
+  ctx.fillText(String(number),x,y+1);ctx.shadowBlur=0;
+  // Color-change flash ring
+  if (b.flash > 0) {
+    ctx.globalAlpha = op * b.flash * 0.8;
+    ctx.beginPath(); ctx.arc(x,y,r+5,0,Math.PI*2);
+    ctx.strokeStyle='rgba(255,255,255,0.9)'; ctx.lineWidth=3; ctx.stroke();
+  }
+  ctx.restore();
 }
 
 /* ── UI HELPERS ────────────────────────────────────── */
@@ -474,10 +534,48 @@ function updateTargetUI(){
   const tt=document.getElementById('timer-txt');
   tt.textContent=(gs.tLeft/1000).toFixed(1)+'s';tt.style.color=tc;
 }
+const MAX_LIVES = 3;
+
+function updateLivesUI() {
+  for (let i = 0; i < MAX_LIVES; i++) {
+    document.getElementById('life-' + i)
+      .classList.toggle('lost', i >= gs.lives);
+  }
+}
+
+let missToastTmr = null;
+function showMiss() {
+  // Red screen flash
+  const fl = document.getElementById('miss-flash');
+  fl.classList.add('flash');
+  setTimeout(() => fl.classList.remove('flash'), 300);
+  // MISS! text
+  const mt = document.getElementById('miss-toast');
+  mt.style.opacity = '1';
+  if (missToastTmr) clearTimeout(missToastTmr);
+  missToastTmr = setTimeout(() => { mt.style.opacity = '0'; }, 700);
+  SFX.wrong();
+}
 let toastTmr=null;
 function showToast(txt){
-  const el=document.getElementById('lvl-toast');el.textContent=txt;el.style.opacity='1';
-  if(toastTmr)clearTimeout(toastTmr);toastTmr=setTimeout(()=>{el.style.opacity='0';},1500);
+  const el=document.getElementById('lvl-toast');
+  el.textContent=txt;
+  el.style.color='#ffdd22'; el.style.textShadow='0 0 20px #ffdd22';
+  el.style.opacity='1';
+  if(toastTmr)clearTimeout(toastTmr);
+  toastTmr=setTimeout(()=>{el.style.opacity='0';},1500);
+}
+function showWind(dir){
+  const el=document.getElementById('lvl-toast');
+  el.textContent = dir>0 ? '💨  WIND  →' : '←  WIND  💨';
+  el.style.color='#aaddff'; el.style.textShadow='0 0 22px #aaddff';
+  el.style.opacity='1';
+  if(toastTmr)clearTimeout(toastTmr);
+  toastTmr=setTimeout(()=>{
+    el.style.opacity='0';
+    el.style.color='#ffdd22'; el.style.textShadow='0 0 20px #ffdd22';
+  },1400);
+  beep(140,'sawtooth',.25,.12);
 }
 
 /* ── ANIMATED BACKGROUND ───────────────────────────── */
@@ -547,16 +645,86 @@ function loop(ts){
   gs.maxTT=Math.round(lerp(CFG.ST,minT,t));
   const spRate=lerp(CFG.BS,CFG.MS,t);
   const maxB=Math.round(lerp(CFG.BB,CFG.MB,t));
-  if(gs.level<CFG.LEVELS&&ts-gs.lvlStart>CFG.LVL_MS){gs.level++;gs.lvlStart=ts;SFX.levelup();showToast('LEVEL '+gs.level+'!');}
+  gs.gameTime = (gs.gameTime||0) + dt;
+  if(gs.level<CFG.LEVELS && gs.gameTime - (gs.lastLevelTime||0) > CFG.LVL_MS){
+    gs.level++;
+    gs.lastLevelTime = gs.gameTime;
+    SFX.levelup();
+    showToast('LEVEL '+gs.level+'!');
+  }
+
+  // ── WIND SYSTEM (level 5+) ─────────────────────────
+  if (!gs.wind) gs.wind = { active:false, dir:1, strength:0, timeLeft:0, nextGust:3000, streaks:[] };
+  const w = gs.wind;
+  if (gs.level >= 5) {
+    if (!w.active) {
+      w.nextGust -= dt;
+      if (w.nextGust <= 0) {
+        w.active    = true;
+        w.dir       = Math.random()<.5 ? 1 : -1;
+        const lvlT  = (gs.level-5)/5; // 0 at lvl5, 1 at lvl10
+        w.strength  = lerp(160, 380, lvlT);
+        w.timeLeft  = lerp(2000, 3200, lvlT);
+        w.nextGust  = lerp(5500, 3000, lvlT);
+        showWind(w.dir);
+      }
+    } else {
+      w.timeLeft -= dt;
+      if (w.timeLeft <= 0) { w.active = false; w.streaks=[]; }
+      // Spawn wind streak particles
+      if (Math.random() < dt * 0.18) {
+        w.streaks.push({
+          x: w.dir > 0 ? -20 : W+20,
+          y: rnd(0, H),
+          len: rnd(30, 90),
+          spd: rnd(300, 550) * Math.abs(w.dir>0?1:-1),
+          op:  rnd(0.06, 0.16),
+          age: 0,
+        });
+      }
+    }
+    // Update streaks
+    for (const s of w.streaks) { s.x += s.spd*(dt/1000); s.age += dt; }
+    w.streaks = w.streaks.filter(s => w.dir>0 ? s.x < W+100 : s.x > -100);
+  }
+
   const active=gs.bubbles.filter(b=>!b.popped).length;
   if(ts-gs.lastSpawn>spRate&&active<maxB){spawnBub(W,H);gs.lastSpawn=ts;}
   for(const b of gs.bubbles){
     if(b.popped){b.pAge+=dt;b.radius+=dt*.065;b.opacity=Math.max(0,1-b.pAge/360);}
-    else{b.y-=b.speed*(dt/1000);b.x+=Math.sin(ts*.001*b.wspd+b.wphs)*b.wamp*(dt/100);b.x=Math.max(b.radius,Math.min(W-b.radius,b.x));}
+    else{
+      b.y-=b.speed*(dt/1000);
+      // Normal wobble
+      b.x+=Math.sin(ts*.001*b.wspd+b.wphs)*b.wamp*(dt/100);
+      // Wind force — overrides clamping, pushes to edges
+      if (gs.wind?.active) {
+        b.x += gs.wind.dir * gs.wind.strength * (dt/1000);
+      }
+      // Clamp — relax during wind so bubbles press against walls
+      const clampPad = gs.wind?.active ? b.radius*0.3 : b.radius;
+      b.x=Math.max(clampPad, Math.min(W-clampPad, b.x));
+      // Color shift
+      b.colorTimer-=dt;
+      if(b.colorTimer<=0){
+        let next=pick(COLORS);
+        while(next.name===b.color.name) next=pick(COLORS);
+        b.color=next; b.flash=1;
+        b.colorTimer=rnd(800,1400);
+      }
+      if(b.flash>0) b.flash=Math.max(0, b.flash-dt/220);
+    }
   }
   gs.bubbles=gs.bubbles.filter(b=>b.popped?b.pAge<420:b.y+b.radius>-12);
   gs.tLeft-=dt;
-  if(gs.tLeft<=0){gs.target=newTarget();gs.tLeft=gs.maxTT;gs.combo=0;gs.misses++;ensureTarget(W,H);}
+  if(gs.tLeft<=0){
+    gs.combo=0; gs.misses++;
+    gs.lives--;
+    updateLivesUI();
+    showMiss();
+    if(gs.lives<=0){ endGame(); return; }
+    gs.target=newTarget(); gs.tLeft=gs.maxTT;
+    ensureTarget(W,H);
+  }
   for(const f of gs.floaters){f.age+=dt;f.y-=60*(dt/1000);}
   gs.floaters=gs.floaters.filter(f=>f.age<900);
   // Animated background (replaces clearRect)
@@ -583,6 +751,33 @@ function loop(ts){
     ctx.restore();
   }
   for(const b of gs.bubbles)drawBubble(ctx,b);
+
+  // Wind streaks
+  if (gs.wind?.active && gs.wind.streaks.length) {
+    ctx.save();
+    for (const s of gs.wind.streaks) {
+      const a = s.op * Math.max(0, 1 - s.age/600);
+      ctx.globalAlpha = a;
+      ctx.strokeStyle = '#aaddff';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(s.x, s.y);
+      ctx.lineTo(s.x - gs.wind.dir * s.len, s.y);
+      ctx.stroke();
+    }
+    ctx.restore();
+    // Wind direction arrow overlay
+    const arrowX = gs.wind.dir > 0 ? W*0.12 : W*0.88;
+    const strength = Math.min(1, gs.wind.timeLeft / 600);
+    ctx.save();
+    ctx.globalAlpha = strength * 0.55;
+    ctx.fillStyle = '#aaddff';
+    ctx.font = `bold ${Math.round(W*0.1)}px monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(gs.wind.dir > 0 ? '»' : '«', arrowX, H*0.5);
+    ctx.restore();
+  }
   for(const f of gs.floaters){
     const a=1-f.age/900;ctx.save();ctx.globalAlpha=a;
     ctx.font=`bold ${f.sz||22}px monospace`;ctx.textAlign='center';
@@ -642,17 +837,13 @@ function startGame(){
   const tgt=newTarget();
   gs={bubbles:[],nid:0,floaters:[],bgB:null,score:0,level:1,mode:selMode,
       target:tgt,tLeft:CFG.ST,maxTT:CFG.ST,lastSpawn:0,lvlStart:0,running:true,
-      combo:0,bestCombo:0,taps:0,hits:0,misses:0};
+      combo:0,bestCombo:0,taps:0,hits:0,misses:0,lives:MAX_LIVES};
   document.getElementById('menu-screen').style.display='none';
   document.getElementById('go-screen').style.display='none';
   document.getElementById('play-wrap').style.display='flex';
+  updateLivesUI();
   document.getElementById('mode-lbl').textContent=MODES[selMode].label;
   updateScoreUI();updateTargetUI();
-  // Pre-seed the screen with a full spread of numbers before the loop starts
-  const W0=canv.width||360, H0=canv.height||600;
-  for (let n=1; n<=9; n++) spawnBub(W0, H0, {number:n, y:H0*rnd(0.15,0.88)});
-  for (let i=0; i<5; i++) spawnBub(W0, H0, {y:H0*rnd(0.05,0.85)});
-  ensureTarget(W0, H0);
   raf=requestAnimationFrame(loop);
 }
 
