@@ -373,7 +373,7 @@ const COLORS=[
   {name:'Gold',hex:'#ffdd22',r:255,g:221,b:34},
 ];
 const MODES={regular:{label:'REGULAR',minTimer:3000},expert:{label:'EXPERT',minTimer:1000}};
-const CFG={ST:5000,LEVELS:10,LVL_MS:15000,BS:900,MS:280,BV:48,MV:145,BB:10,MB:28};
+const CFG={ST:5000,LEVELS:10,LVL_MS:15000,BS:1100,MS:320,BV:48,MV:145,BB:7,MB:20};
 const rgba=(c,a)=>`rgba(${c.r},${c.g},${c.b},${a})`;
 const rnd=(a,b)=>Math.random()*(b-a)+a;
 const rndI=(a,b)=>Math.floor(rnd(a,b+1));
@@ -423,40 +423,120 @@ window.selMode=function(m){
   document.getElementById('btn-expert').classList.toggle('sel',m==='expert');
 };
 
+/* ── SHAPE SYSTEM ──────────────────────────────────── */
+const N_PTS = 24;
+const SHAPE_TYPES = ['circle','hexagon','diamond','star','pentagon','triangle'];
+
+function getShapePts(type, r) {
+  const pts = [];
+  for (let i = 0; i < N_PTS; i++) {
+    const a = (i / N_PTS) * Math.PI * 2;
+    let rad = r;
+    switch(type) {
+      case 'circle':
+        rad = r; break;
+      case 'hexagon': {
+        const s = Math.PI/3;
+        rad = r * Math.cos(s/2) / Math.cos((((a % s) + s) % s) - s/2);
+        break; }
+      case 'diamond': {
+        const s = Math.PI/2;
+        rad = r * 0.92 * Math.cos(s/2) / Math.cos((((a % s) + s) % s) - s/2);
+        break; }
+      case 'star': {
+        const n=5, inner=0.48;
+        const seg = (2*Math.PI)/n;
+        const sa = ((a % seg) + seg) % seg;
+        const t2 = sa/(seg/2);
+        rad = r * (t2 < 1 ? lerp(1,inner,t2) : lerp(inner,1,t2-1));
+        break; }
+      case 'pentagon': {
+        const s = (2*Math.PI)/5;
+        rad = r * Math.cos(s/2) / Math.cos((((a % s) + s) % s) - s/2);
+        break; }
+      case 'triangle': {
+        const s = (2*Math.PI)/3;
+        rad = r * 0.88 * Math.cos(s/2) / Math.cos((((a % s) + s) % s) - s/2);
+        break; }
+    }
+    pts.push([Math.cos(a)*rad, Math.sin(a)*rad]);
+  }
+  return pts;
+}
+
+function traceShape(ctx, x, y, b, scale=1) {
+  const {ptsFrom, ptsTo, morphT, rot} = b;
+  const c2 = Math.cos(rot||0), s2 = Math.sin(rot||0);
+  ctx.beginPath();
+  for (let i=0; i<N_PTS; i++) {
+    const rx = lerp(ptsFrom[i][0], ptsTo[i][0], morphT) * scale;
+    const ry = lerp(ptsFrom[i][1], ptsTo[i][1], morphT) * scale;
+    const px = x + rx*c2 - ry*s2;
+    const py = y + rx*s2 + ry*c2;
+    i===0 ? ctx.moveTo(px,py) : ctx.lineTo(px,py);
+  }
+  ctx.closePath();
+}
+
 /* ── GAME STATE ────────────────────────────────────── */
 let gs=null,raf=null,lastT=null;
 const newTarget=()=>({color:pick(COLORS),number:rndI(1,9)});
 
-// Prefer numbers not already visible so all 9 get screen time
 function pickNumber() {
   const onScreen = new Set(gs.bubbles.filter(b=>!b.popped).map(b=>b.number));
   const pool = [];
   for (let n=1; n<=9; n++) {
-    // Numbers absent from screen get 4× weight; present ones get 1×
     const w = onScreen.has(n) ? 1 : 4;
     for (let i=0; i<w; i++) pool.push(n);
   }
   return pick(pool);
 }
 
+// Find spawn position with minimal overlap
+function findSpawnPos(W, H, r, overrideX, overrideY) {
+  if (overrideX !== undefined) return [overrideX, overrideY];
+  const active = gs.bubbles.filter(b=>!b.popped);
+  let bestX = rnd(r+16, W-r-16), bestY = H+r+6, bestDist = -1;
+  for (let attempt=0; attempt<6; attempt++) {
+    const tx = rnd(r+16, W-r-16);
+    const ty = H+r+6 + attempt*8;
+    let minDist = Infinity;
+    for (const b of active) {
+      const d = Math.hypot(tx-b.x, ty-b.y) - r - b.radius;
+      if (d < minDist) minDist = d;
+    }
+    if (minDist > bestDist) { bestDist=minDist; bestX=tx; bestY=ty; }
+  }
+  return [bestX, bestY];
+}
+
 function spawnBub(W, H, overrides={}) {
-  const t=(gs.level-1)/(CFG.LEVELS-1), r=rndI(27,50);
+  const t=(gs.level-1)/(CFG.LEVELS-1), r=rndI(28,48);
+  const [sx, sy] = findSpawnPos(W, H, r, overrides.x, overrides.y);
+  const shapeFrom = pick(SHAPE_TYPES);
+  const shapeTo   = pick(SHAPE_TYPES.filter(s=>s!==shapeFrom));
   gs.bubbles.push({
     id:gs.nid++,
-    x:   overrides.x   ?? rnd(r+16, W-r-16),
-    y:   overrides.y   ?? H+r+6,
-    radius: r,
+    x:sx, y:sy, radius:r,
     color:  overrides.color  ?? pick(COLORS),
     number: overrides.number ?? pickNumber(),
     speed:  lerp(CFG.BV,CFG.MV,t)*rnd(.7,1.3),
     wphs:rnd(0,Math.PI*2), wspd:rnd(.6,1.6), wamp:rnd(2,9),
     opacity:1, popped:false, pAge:0,
-    colorTimer: rnd(800,1400), // ms until next color shift
-    flash: 0,                  // 0-1 white flash on color change
+    colorTimer: rnd(900,1600),
+    flash: 0,
+    // Shape morph
+    shapeFrom, shapeTo,
+    ptsFrom: getShapePts(shapeFrom, r),
+    ptsTo:   getShapePts(shapeTo, r),
+    morphT:  0,
+    morphSpd: rnd(0.0003, 0.0008), // progress per ms
+    rot:  rnd(0, Math.PI*2),
+    rotSpd: rnd(-0.0006, 0.0006),
   });
 }
 
-// Guarantee the current target (number+color) exists somewhere visible
+// Guarantee the current target exists somewhere visible
 function ensureTarget(W, H) {
   const tgt = gs.target;
   const exists = gs.bubbles.some(b =>
@@ -466,41 +546,61 @@ function ensureTarget(W, H) {
     spawnBub(W, H, {
       color:  tgt.color,
       number: tgt.number,
-      // Place in lower-middle of screen so it's immediately visible
-      x: rnd(50, (W||360)-50),
-      y: (H||600) * rnd(0.55, 0.82),
+      x: rnd(60, (W||360)-60),
+      y: (H||600) * rnd(0.5, 0.78),
     });
   }
 }
 
 /* ── DRAW BUBBLE ───────────────────────────────────── */
-function drawBubble(ctx,b){
-  if(b.opacity<=0)return;
-  const{x,y,radius:r,color:c,number,opacity:op}=b;
-  ctx.save();ctx.globalAlpha=op;
-  ctx.shadowColor=c.hex;ctx.shadowBlur=22;
-  ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);
-  ctx.strokeStyle=rgba(c,.9);ctx.lineWidth=2.5;ctx.stroke();
-  ctx.shadowBlur=0;
-  const body=ctx.createRadialGradient(x-r*.22,y-r*.22,r*.04,x,y,r);
-  body.addColorStop(0,'rgba(255,255,255,0.28)');
-  body.addColorStop(.4,rgba(c,.06));body.addColorStop(.75,rgba(c,.18));body.addColorStop(1,rgba(c,.46));
-  ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fillStyle=body;ctx.fill();
-  const iri=ctx.createLinearGradient(x-r,y,x+r,y);
-  iri.addColorStop(0,'rgba(255,80,255,0.14)');iri.addColorStop(.5,'rgba(80,255,255,0.14)');iri.addColorStop(1,'rgba(255,255,80,0.14)');
-  ctx.beginPath();ctx.arc(x,y,r-3,0,Math.PI*2);ctx.strokeStyle=iri;ctx.lineWidth=5;ctx.stroke();
-  const sp=ctx.createRadialGradient(x-r*.32,y-r*.37,1,x-r*.22,y-r*.28,r*.42);
-  sp.addColorStop(0,'rgba(255,255,255,0.68)');sp.addColorStop(1,'rgba(255,255,255,0)');
-  ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fillStyle=sp;ctx.fill();
-  ctx.font=`bold ${Math.round(r*.82)}px monospace`;
-  ctx.textAlign='center';ctx.textBaseline='middle';
-  ctx.shadowColor=c.hex;ctx.shadowBlur=12;
+function drawBubble(ctx, b) {
+  if (b.opacity<=0) return;
+  const {x, y, radius:r, color:c, number, opacity:op} = b;
+  ctx.save();
+  ctx.globalAlpha = op;
+
+  // Outer glow
+  ctx.shadowColor = c.hex; ctx.shadowBlur = 20;
+  traceShape(ctx, x, y, b);
+  ctx.strokeStyle = rgba(c,.9); ctx.lineWidth = 2.5; ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // Translucent fill
+  const body = ctx.createRadialGradient(x-r*.22,y-r*.22,r*.04,x,y,r);
+  body.addColorStop(0,  'rgba(255,255,255,0.26)');
+  body.addColorStop(.4,  rgba(c,.06));
+  body.addColorStop(.75, rgba(c,.18));
+  body.addColorStop(1,   rgba(c,.45));
+  traceShape(ctx, x, y, b);
+  ctx.fillStyle = body; ctx.fill();
+
+  // Iridescent inner ring
+  const iri = ctx.createLinearGradient(x-r,y,x+r,y);
+  iri.addColorStop(0,  'rgba(255,80,255,0.13)');
+  iri.addColorStop(.5, 'rgba(80,255,255,0.13)');
+  iri.addColorStop(1,  'rgba(255,255,80,0.13)');
+  traceShape(ctx, x, y, b, 0.87);
+  ctx.strokeStyle = iri; ctx.lineWidth = 5; ctx.stroke();
+
+  // Specular highlight (always circular — it's a light reflection)
+  const sp = ctx.createRadialGradient(x-r*.32,y-r*.37,1,x-r*.22,y-r*.28,r*.42);
+  sp.addColorStop(0,'rgba(255,255,255,0.65)');
+  sp.addColorStop(1,'rgba(255,255,255,0)');
+  traceShape(ctx, x, y, b);
+  ctx.fillStyle = sp; ctx.fill();
+
+  // Number
+  ctx.font = `bold ${Math.round(r*.8)}px monospace`;
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.shadowColor=c.hex; ctx.shadowBlur=12;
   ctx.fillStyle='rgba(255,255,255,0.96)';
-  ctx.fillText(String(number),x,y+1);ctx.shadowBlur=0;
-  // Color-change flash ring
+  ctx.fillText(String(number), x, y+1);
+  ctx.shadowBlur=0;
+
+  // Color-change flash
   if (b.flash > 0) {
-    ctx.globalAlpha = op * b.flash * 0.8;
-    ctx.beginPath(); ctx.arc(x,y,r+5,0,Math.PI*2);
+    ctx.globalAlpha = op * b.flash * 0.75;
+    traceShape(ctx, x, y, b, 1.12);
     ctx.strokeStyle='rgba(255,255,255,0.9)'; ctx.lineWidth=3; ctx.stroke();
   }
   ctx.restore();
@@ -703,7 +803,17 @@ function loop(ts){
       // Clamp — relax during wind so bubbles press against walls
       const clampPad = gs.wind?.active ? b.radius*0.3 : b.radius;
       b.x=Math.max(clampPad, Math.min(W-clampPad, b.x));
-      // Color shift
+      // Shape morph & rotation
+      b.rot = (b.rot||0) + b.rotSpd*dt;
+      b.morphT = Math.min(1, b.morphT + b.morphSpd*dt);
+      if (b.morphT >= 1) {
+        b.shapeFrom = b.shapeTo;
+        b.ptsFrom   = b.ptsTo;
+        b.shapeTo   = pick(SHAPE_TYPES.filter(s=>s!==b.shapeFrom));
+        b.ptsTo     = getShapePts(b.shapeTo, b.radius);
+        b.morphT    = 0;
+        b.morphSpd  = rnd(0.0003, 0.0008);
+      }
       b.colorTimer-=dt;
       if(b.colorTimer<=0){
         let next=pick(COLORS);
