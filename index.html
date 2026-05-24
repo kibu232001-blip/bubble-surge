@@ -207,7 +207,64 @@ body{display:flex;align-items:stretch;justify-content:center}
   opacity:0;transition:opacity .2s;z-index:15;white-space:nowrap;
 }
 
-/* ══ GAME OVER ════════════════════════════════════════ */
+/* ── PSYCHOLOGICAL HOOKS ───────────────────────────── */
+
+/* Milestone burst overlay */
+#milestone-flash{
+  position:absolute;inset:0;pointer-events:none;z-index:25;
+  opacity:0;transition:opacity .1s;
+}
+#milestone-flash.pop{opacity:1;}
+
+/* Milestone text */
+#milestone-txt{
+  position:absolute;left:50%;transform:translateX(-50%);
+  top:38%;pointer-events:none;z-index:26;
+  font-size:clamp(28px,8vw,38px);font-weight:900;letter-spacing:4px;
+  text-align:center;white-space:nowrap;
+  opacity:0;transition:opacity .15s;
+  text-shadow:0 0 40px currentColor;
+}
+
+/* Combo glow — intensifies at x4 */
+#combo-glow{
+  position:absolute;inset:0;pointer-events:none;z-index:1;
+  background:radial-gradient(ellipse at center, rgba(255,221,34,0) 40%, rgba(255,221,34,0) 100%);
+  transition:background 1s;
+}
+#combo-glow.hot{
+  background:radial-gradient(ellipse at center, rgba(255,221,34,0) 30%, rgba(255,100,0,0.12) 100%);
+}
+
+/* Near-miss pulse — timer bar shake */
+@keyframes timerPulse {
+  0%,100%{transform:scaleX(1)} 50%{transform:scaleX(1.03)}
+}
+.timer-bar.pulse{animation:timerPulse .18s infinite;}
+
+/* Streak badge on menu */
+.streak-badge{
+  display:flex;align-items:center;gap:7px;
+  background:rgba(255,100,0,0.12);border:1px solid rgba(255,150,0,0.3);
+  border-radius:20px;padding:7px 16px;
+  font-size:13px;font-weight:700;letter-spacing:1px;color:#ffaa22;
+}
+.streak-badge .sf{font-size:18px;}
+
+/* Golden bubble indicator in HUD */
+#golden-alert{
+  font-size:10px;letter-spacing:1px;padding:2px 8px;border-radius:20px;
+  background:rgba(255,215,0,0.2);border:1px solid rgba(255,215,0,0.5);
+  color:#ffd700;display:none;animation:goldPulse .5s ease-in-out infinite alternate;
+}
+#golden-alert.show{display:inline-block;}
+@keyframes goldPulse{from{box-shadow:0 0 6px rgba(255,215,0,0.3)}to{box-shadow:0 0 18px rgba(255,215,0,0.8)}}
+
+/* Almost message on game over */
+.almost-msg{
+  font-size:12px;letter-spacing:1px;color:rgba(255,150,100,0.85);
+  text-align:center;font-style:italic;position:relative;
+}
 #go-screen{
   flex:1;display:flex;flex-direction:column;
   align-items:center;justify-content:center;
@@ -242,6 +299,11 @@ body{display:flex;align-items:stretch;justify-content:center}
     <div id="splash-vignette"></div>
 
     <div id="menu-bottom">
+      <!-- Streak -->
+      <div class="streak-badge" id="streak-badge" style="display:none">
+        <span class="sf">🔥</span><span id="streak-txt">3 DAY STREAK</span>
+      </div>
+
       <!-- Best scores -->
       <div class="best-row">
         <div class="best-box">
@@ -295,6 +357,9 @@ body{display:flex;align-items:stretch;justify-content:center}
   <!-- ══ PLAYING ════════════════════════════════════════ -->
   <div id="play-wrap" style="display:none">
     <div id="miss-flash"></div>
+    <div id="combo-glow"></div>
+    <div id="milestone-flash"></div>
+    <div id="milestone-txt"></div>
     <div class="hud">
       <div class="hud-col">
         <div class="hud-lbl">SCORE</div>
@@ -304,6 +369,7 @@ body{display:flex;align-items:stretch;justify-content:center}
         <div class="hud-lbl">LEVEL</div>
         <div class="hud-val" id="h-level" style="color:#2277ff;text-shadow:0 0 14px #2277ff">1</div>
         <div class="combo-badge" id="combo-badge">×2 COMBO</div>
+        <div id="golden-alert">✦ GOLDEN</div>
       </div>
       <div class="hud-col" style="text-align:center">
         <div class="hud-lbl">LIVES</div>
@@ -347,6 +413,7 @@ body{display:flex;align-items:stretch;justify-content:center}
     <div class="final-lbl">FINAL SCORE</div>
     <div class="final-score" id="final-score">0</div>
     <div class="best-tag" id="new-best">🏆 NEW BEST</div>
+    <div class="almost-msg" id="almost-msg" style="display:none"></div>
     <div class="go-stats">
       <div class="go-stat"><div class="sl">LEVEL</div><div class="sv" id="go-level">1</div></div>
       <div class="go-stat"><div class="sl">BEST COMBO</div><div class="sv" id="go-combo" style="color:#ffdd22;text-shadow:0 0 10px #ffdd22">0×</div></div>
@@ -408,6 +475,90 @@ function refreshBestUI(){
   document.getElementById('best-exp').textContent=getHS('expert');
 }
 refreshBestUI();
+
+refreshBestUI();
+
+/* ── DAILY STREAK ──────────────────────────────────── */
+function checkStreak(){
+  const today=new Date().toDateString();
+  const last=localStorage.getItem('bs_last_play');
+  let streak=parseInt(localStorage.getItem('bs_streak')||'0',10);
+  if(last===today){}
+  else if(last===new Date(Date.now()-86400000).toDateString()){streak++;localStorage.setItem('bs_streak',streak);localStorage.setItem('bs_last_play',today);}
+  else{streak=1;localStorage.setItem('bs_streak',streak);localStorage.setItem('bs_last_play',today);}
+  const el=document.getElementById('streak-badge');
+  if(streak>=2){document.getElementById('streak-txt').textContent=streak+' DAY STREAK';el.style.display='flex';}
+  else el.style.display='none';
+}
+checkStreak();
+
+/* ── SCORE MILESTONES ──────────────────────────────── */
+const MILESTONES=[25,50,100,150,200,300,500];
+let lastMilestone=0;
+function checkMilestone(score){
+  for(const m of MILESTONES){
+    if(score>=m&&lastMilestone<m){lastMilestone=m;fireMilestone(m);break;}
+  }
+}
+let msTmr=null;
+function fireMilestone(val){
+  const flash=document.getElementById('milestone-flash');
+  const txt=document.getElementById('milestone-txt');
+  const msgs=val>=300?['UNSTOPPABLE','FLOW STATE','GODLIKE']:val>=100?['ON FIRE','SURGE!','LOCKED IN']:['NICE','SMOOTH','KEEP GOING'];
+  txt.textContent=pick(msgs)+'  '+val+'!';
+  const cols=['#ffdd22','#00ffee','#cc33ff','#33ff88','#ff5533'];
+  const col=pick(cols);
+  txt.style.color=col;
+  flash.style.background=`radial-gradient(ellipse at center,${col}22 0%,transparent 70%)`;
+  flash.classList.add('pop');txt.style.opacity='1';
+  if(msTmr)clearTimeout(msTmr);
+  msTmr=setTimeout(()=>{flash.classList.remove('pop');txt.style.opacity='0';},900);
+  [523,659,784].forEach((f,i)=>beep(f,'sine',.12,.14,i*.06));
+  if(val>=100)beep(1047,'sine',.18,.18,.18);
+  if(navigator.vibrate)navigator.vibrate(val>=100?[40,20,40]:30);
+}
+
+/* ── GOLDEN BUBBLE ─────────────────────────────────── */
+let goldenId=null;
+function trySpawnGolden(W,H){
+  if(goldenId)return;
+  if(Math.random()>0.04)return;
+  const t=(gs.level-1)/(CFG.LEVELS-1),r=rndI(30,48);
+  const bub={id:gs.nid++,x:rnd(r+20,W-r-20),y:H+r+6,radius:r,
+    color:pick(COLORS),number:rndI(1,9),
+    speed:lerp(CFG.BV,CFG.MV,t)*rnd(.6,1.0),
+    wphs:rnd(0,Math.PI*2),wspd:rnd(.5,1.2),wamp:rnd(3,8),
+    opacity:1,popped:false,pAge:0,colorTimer:500,flash:0,
+    shapeFrom:'star',shapeTo:'circle',
+    ptsFrom:getShapePts('star',r),ptsTo:getShapePts('circle',r),
+    morphT:0,morphSpd:0.001,rot:0,rotSpd:0.002,golden:true};
+  gs.bubbles.push(bub);
+  goldenId=bub.id;
+  document.getElementById('golden-alert').classList.add('show');
+}
+function drawGoldenGlow(ctx,b){
+  const pulse=0.5+0.5*Math.abs(Math.sin(Date.now()*0.004));
+  ctx.save();ctx.globalAlpha=b.opacity*pulse*0.7;
+  traceShape(ctx,b.x,b.y,b,1.18);
+  ctx.strokeStyle='#ffd700';ctx.lineWidth=3;
+  ctx.shadowColor='#ffd700';ctx.shadowBlur=24;ctx.stroke();
+  ctx.restore();
+}
+
+/* ── NEAR-MISS PULSE ───────────────────────────────── */
+let nearMissActive=false;
+function checkNearMiss(tLeft,maxTT){
+  const pct=tLeft/maxTT;
+  const bar=document.querySelector('.timer-bar');
+  if(pct<0.22&&!nearMissActive){nearMissActive=true;bar&&bar.classList.add('pulse');beep(220,'sine',.08,.05);}
+  else if(pct>=0.22&&nearMissActive){nearMissActive=false;bar&&bar.classList.remove('pulse');}
+}
+
+/* ── COMBO GLOW ────────────────────────────────────── */
+function updateComboGlow(combo){
+  document.getElementById('combo-glow').classList.toggle('hot',combo>=4);
+  if(combo>=7&&navigator.vibrate)navigator.vibrate(15);
+}
 
 /* ── SOUND TOGGLE ──────────────────────────────────── */
 soundOn=localStorage.getItem('bs_snd')!=='0';
@@ -789,7 +940,11 @@ function loop(ts){
   }
 
   const active=gs.bubbles.filter(b=>!b.popped).length;
-  if(ts-gs.lastSpawn>spRate&&active<maxB){spawnBub(W,H);gs.lastSpawn=ts;}
+  if(ts-gs.lastSpawn>spRate&&active<maxB){
+    spawnBub(W,H);
+    trySpawnGolden(W,H);
+    gs.lastSpawn=ts;
+  }
   for(const b of gs.bubbles){
     if(b.popped){b.pAge+=dt;b.radius+=dt*.065;b.opacity=Math.max(0,1-b.pAge/360);}
     else{
@@ -860,7 +1015,7 @@ function loop(ts){
     ctx.fill();
     ctx.restore();
   }
-  for(const b of gs.bubbles)drawBubble(ctx,b);
+  for(const b of gs.bubbles){drawBubble(ctx,b);if(b.golden&&!b.popped)drawGoldenGlow(ctx,b);}
 
   // Wind streaks
   if (gs.wind?.active && gs.wind.streaks.length) {
@@ -894,7 +1049,17 @@ function loop(ts){
     ctx.fillStyle=f.pos?'#33ff88':'#ff2244';ctx.shadowColor=ctx.fillStyle;ctx.shadowBlur=14;
     ctx.fillText(f.txt,f.x,f.y);ctx.restore();
   }
-  if(!gs.uiTs||ts-gs.uiTs>80){gs.uiTs=ts;updateScoreUI();updateTargetUI();}
+  if(!gs.uiTs||ts-gs.uiTs>80){
+    gs.uiTs=ts;
+    updateScoreUI();updateTargetUI();
+    checkNearMiss(gs.tLeft,gs.maxTT);
+    updateComboGlow(gs.combo);
+    // Clear golden alert if bubble gone
+    if(goldenId && !gs.bubbles.some(b=>b.id===goldenId&&!b.popped)){
+      goldenId=null;
+      document.getElementById('golden-alert').classList.remove('show');
+    }
+  }
   raf=requestAnimationFrame(loop);
 }
 
@@ -919,13 +1084,23 @@ function handleTap(e){
   hit.popped=true;gs.taps++;SFX.pop();
   if(ok){
     gs.hits++;gs.combo++;if(gs.combo>gs.bestCombo)gs.bestCombo=gs.combo;
-    const mult=gs.combo>=7?4:gs.combo>=5?3:gs.combo>=3?2:1;
+    const isGolden = hit.golden;
+    const mult = isGolden ? 10 : gs.combo>=7?4:gs.combo>=5?3:gs.combo>=3?2:1;
     const earned=hit.number*mult;gs.score+=earned;
-    gs.floaters.push({x:hit.x,y:hit.y-12,txt:mult>1?`+${earned} ×${mult}`:`+${earned}`,pos:true,age:0,sz:mult>1?26:22});
+    if(isGolden){
+      goldenId=null;
+      document.getElementById('golden-alert').classList.remove('show');
+      gs.floaters.push({x:hit.x,y:hit.y-12,txt:`✦ +${earned}`,pos:true,age:0,sz:32});
+      beep(1400,'sine',.2,.25);beep(1800,'sine',.15,.2,.08);
+      if(navigator.vibrate)navigator.vibrate([30,15,30,15,60]);
+    } else {
+      gs.floaters.push({x:hit.x,y:hit.y-12,txt:mult>1?`+${earned} ×${mult}`:`+${earned}`,pos:true,age:0,sz:mult>1?26:22});
+      if(mult>1)SFX.combo();else SFX.correct();
+    }
+    checkMilestone(gs.score);
     gs.target=newTarget();gs.tLeft=gs.maxTT;
     const cv2=document.getElementById('cv');
     ensureTarget(cv2.width,cv2.height);
-    if(mult>1)SFX.combo();else SFX.correct();
   }else{
     gs.combo=0;gs.score-=hit.number;
     gs.floaters.push({x:hit.x,y:hit.y-12,txt:`-${hit.number}`,pos:false,age:0});
@@ -948,7 +1123,11 @@ function startGame(){
   gs={bubbles:[],nid:0,floaters:[],bgB:null,score:0,level:1,mode:selMode,
       target:tgt,tLeft:CFG.ST,maxTT:CFG.ST,lastSpawn:0,lvlStart:0,running:true,
       combo:0,bestCombo:0,taps:0,hits:0,misses:0,lives:MAX_LIVES};
-  document.getElementById('menu-screen').style.display='none';
+  lastMilestone=0; goldenId=null; nearMissActive=false;
+  document.getElementById('golden-alert').classList.remove('show');
+  document.getElementById('combo-glow').classList.remove('hot');
+  document.querySelector('.timer-bar')?.classList.remove('pulse');
+  document.getElementById('milestone-txt').style.opacity='0';
   document.getElementById('go-screen').style.display='none';
   document.getElementById('play-wrap').style.display='flex';
   updateLivesUI();
@@ -969,6 +1148,16 @@ function endGame(){
   fs.textContent=s;fs.style.color=s>=0?'#33ff88':'#ff2244';
   fs.style.textShadow=`0 0 40px ${s>=0?'#33ff88':'#ff2244'}`;
   document.getElementById('new-best').classList.toggle('show',s>0&&s>=prev&&s>0);
+  // "Almost" hook — cruelest line in the game
+  const almostEl=document.getElementById('almost-msg');
+  if(s>0&&s<prev&&prev-s<=15){
+    almostEl.textContent=`You were ${prev-s} point${prev-s===1?'':'s'} from your best. So close.`;
+    almostEl.style.display='block';
+  } else if(s>0&&s<prev){
+    almostEl.textContent=`Best: ${prev}. You had ${s}. Run it back.`;
+    almostEl.style.display='block';
+  } else { almostEl.style.display='none'; }
+  checkStreak();
   document.getElementById('go-level').textContent=lvl+'/'+CFG.LEVELS;
   document.getElementById('go-combo').textContent=bc+'×';
   document.getElementById('go-acc').textContent=acc+'%';
