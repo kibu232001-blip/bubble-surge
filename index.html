@@ -263,13 +263,42 @@ body{display:flex;align-items:stretch;justify-content:center}
 #golden-alert.show{display:inline-block;}
 @keyframes goldPulse{from{box-shadow:0 0 6px rgba(255,215,0,0.3)}to{box-shadow:0 0 18px rgba(255,215,0,0.8)}}
 
-/* Almost message on game over */
+/* Almost / FOMO message — typewriter animated */
 .almost-msg{
-  font-size:12px;letter-spacing:1px;color:rgba(255,150,100,0.85);
-  text-align:center;font-style:italic;position:relative;
+  font-size:clamp(16px,4.8vw,22px);
+  font-weight:700;letter-spacing:1px;
+  color:#ff8855;
+  text-align:center;
+  text-shadow:0 0 20px rgba(255,136,85,0.6);
+  position:relative;
+  max-width:320px;line-height:1.5;
+  min-height:2.5em;
 }
+/* Cursor blink */
+.almost-msg::after{
+  content:'|';
+  display:inline-block;
+  color:#ff8855;
+  opacity:1;
+  animation:cursorBlink .7s step-end infinite;
+  margin-left:2px;
+}
+.almost-msg.done::after{display:none}
+@keyframes cursorBlink{0%,100%{opacity:1}50%{opacity:0}}
 
-/* ══ GAME OVER ════════════════════════════════════════ */
+/* Each typed span gets a flash as it lands */
+.almost-msg .char{
+  display:inline;
+  opacity:0;
+  text-shadow:0 0 0px rgba(255,136,85,0);
+  animation:charPop .08s forwards;
+}
+.almost-msg .char.space{display:inline-block;width:.3em}
+@keyframes charPop{
+  0%  {opacity:0;text-shadow:0 0 18px rgba(255,200,100,0.9);color:#fff}
+  40% {opacity:1;text-shadow:0 0 12px rgba(255,200,100,0.7);color:#ffcc88}
+  100%{opacity:1;text-shadow:0 0 0px rgba(255,136,85,0);color:#ff8855}
+}
 #go-screen{
   position:absolute;inset:0;z-index:75;
   display:none;flex-direction:column;
@@ -651,6 +680,26 @@ function haptic(state) {
   const pattern = HAPTICS[state];
   if (pattern) navigator.vibrate(pattern);
 }
+/* ── TYPEWRITER ────────────────────────────────────── */
+let twTimer=null;
+function typeWriter(el, text, speed=40){
+  if(twTimer)clearTimeout(twTimer);
+  el.innerHTML=''; el.classList.remove('done');
+  let i=0;
+  function next(){
+    if(i>=text.length){el.classList.add('done');return;}
+    const ch=text[i];
+    const span=document.createElement('span');
+    if(ch===' '){span.className='char space';span.innerHTML='&nbsp;';}
+    else{span.className='char';span.textContent=ch;}
+    span.style.animationDelay='0s';
+    el.appendChild(span); i++;
+    const delay=/[.!?,]/.test(ch)?speed*6:speed;
+    twTimer=setTimeout(next,delay);
+  }
+  twTimer=setTimeout(next,700);
+}
+
 let nearMissActive=false;
 function checkNearMiss(tLeft,maxTT){
   const pct=tLeft/maxTT;
@@ -1326,24 +1375,23 @@ function endGame(){
   fs.textContent=s;fs.style.color=s>=0?'#33ff88':'#ff2244';
   fs.style.textShadow=`0 0 40px ${s>=0?'#33ff88':'#ff2244'}`;
   document.getElementById('new-best').classList.toggle('show',s>0&&s>=prev&&s>0);
-  // FOMO hook — always show something on game over
+  // FOMO hook — typewriter animated
   const almostEl=document.getElementById('almost-msg');
-  almostEl.style.animation='none';
-  almostEl.offsetHeight; // force reflow to restart animation
-  almostEl.style.animation='';
+  let fomoMsg='';
   if(s<=0){
-    almostEl.textContent='Going negative? That takes talent. Run it back.';
+    fomoMsg='Going negative? That takes talent. Run it back.';
   } else if(s>0&&s>prev){
-    almostEl.textContent='New record. They said it couldn\'t be done.';
-  } else if(s>0&&prev-s<=5){
-    almostEl.textContent=`${prev-s} point${prev-s===1?'':'s'} from your best. So. Close.`;
-  } else if(s>0&&prev-s<=15){
-    almostEl.textContent=`You were ${prev-s} points from your best. You know what to do.`;
-  } else if(s>0&&s<prev){
-    almostEl.textContent=`Best: ${prev}. You had ${s}. The gap is closing.`;
+    fomoMsg="New record. They said it couldn't be done.";
+  } else if(s>0&&prev>0&&prev-s<=5){
+    fomoMsg=`${prev-s} point${prev-s===1?'':'s'} from your best. So. Close.`;
+  } else if(s>0&&prev>0&&prev-s<=15){
+    fomoMsg=`You were ${prev-s} points from your best. You know what to do.`;
+  } else if(s>0&&prev>0&&s<prev){
+    fomoMsg=`Best: ${prev}. You had ${s}. The gap is closing.`;
   } else {
-    almostEl.textContent='First run. This is where it starts.';
+    fomoMsg='First run. This is where it starts.';
   }
+  typeWriter(almostEl, fomoMsg, 38);
   checkStreak();
   document.getElementById('go-level').textContent=lvl+'/'+CFG.LEVELS;
   document.getElementById('go-combo').textContent=bc+'×';
