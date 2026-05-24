@@ -748,17 +748,20 @@ function ensureTarget(W, H) {
   const r = rndI(28, 44);
   const safeW = W || 360;
   const safeH = H || 600;
+  // Pick a random screen zone so it never spawns in the same spot
+  const zones = [[0.10,0.28],[0.28,0.48],[0.48,0.68],[0.68,0.86]];
+  const zone  = pick(zones);
   const bub = {
     id: gs.nid++,
-    x: rnd(r + 30, safeW - r - 30),
-    y: safeH * rnd(0.35, 0.65), // mid-screen, immediately visible
+    x: rnd(r + 24, safeW - r - 24),
+    y: safeH * rnd(zone[0], zone[1]),
     radius: r,
     color:  tgt.color,
     number: tgt.number,
     speed:  lerp(CFG.BV, CFG.MV, (gs.level-1)/(CFG.LEVELS-1)) * rnd(0.7, 1.1),
     wphs: rnd(0, Math.PI*2), wspd: rnd(0.6,1.4), wamp: rnd(2,7),
     opacity: 1, popped: false, pAge: 0,
-    colorTimer: 99999, colorLocked: true, // won't shift while target
+    colorTimer: 99999, colorLocked: true,
     flash: 0,
     shapeFrom: pick(SHAPE_TYPES),
     shapeTo:   pick(SHAPE_TYPES),
