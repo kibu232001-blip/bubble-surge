@@ -520,7 +520,7 @@ function fireMilestone(val){
   msTmr=setTimeout(()=>{flash.classList.remove('pop');txt.style.opacity='0';},900);
   [523,659,784].forEach((f,i)=>beep(f,'sine',.12,.14,i*.06));
   if(val>=100)beep(1047,'sine',.18,.18,.18);
-  if(navigator.vibrate)navigator.vibrate(val>=100?[40,20,40]:30);
+  haptic('levelup');
 }
 
 /* ── GOLDEN BUBBLE ─────────────────────────────────── */
@@ -550,19 +550,43 @@ function drawGoldenGlow(ctx,b){
   ctx.restore();
 }
 
-/* ── NEAR-MISS PULSE ───────────────────────────────── */
+/* ── HAPTIC RHYTHMS ────────────────────────────────── */
+// Each state gets a distinct physical language
+const HAPTICS = {
+  correct:   [25],                        // clean single tap — confirmation
+  wrong:     [40, 30, 80],               // stutter-thud — penalty pain
+  miss:      [60, 20, 60, 20, 60],       // triple pulse — time expired
+  combo3:    [20, 15, 20],               // double light — building
+  combo5:    [20, 10, 20, 10, 40],       // escalating — on fire
+  combo7:    [15, 8, 15, 8, 15, 8, 60], // rapid + heavy — godlike
+  levelup:   [30, 20, 30, 20, 60],       // rhythmic rise — milestone
+  golden:    [30, 15, 30, 15, 30, 15, 80], // staccato + boom — jackpot
+  nearmiss:  [15],                        // single tick — urgency
+  gameover:  [80, 40, 80, 40, 120],      // heavy descent — finality
+};
+function haptic(state) {
+  if (!navigator.vibrate) return;
+  const pattern = HAPTICS[state];
+  if (pattern) navigator.vibrate(pattern);
+}
 let nearMissActive=false;
 function checkNearMiss(tLeft,maxTT){
   const pct=tLeft/maxTT;
   const bar=document.querySelector('.timer-bar');
-  if(pct<0.22&&!nearMissActive){nearMissActive=true;bar&&bar.classList.add('pulse');beep(220,'sine',.08,.05);}
-  else if(pct>=0.22&&nearMissActive){nearMissActive=false;bar&&bar.classList.remove('pulse');}
+  if(pct<0.22&&!nearMissActive){
+    nearMissActive=true;
+    bar&&bar.classList.add('pulse');
+    beep(220,'sine',.08,.05);
+    haptic('nearmiss');
+  } else if(pct>=0.22&&nearMissActive){nearMissActive=false;bar&&bar.classList.remove('pulse');}
 }
 
 /* ── COMBO GLOW ────────────────────────────────────── */
 function updateComboGlow(combo){
   document.getElementById('combo-glow').classList.toggle('hot',combo>=4);
-  if(combo>=7&&navigator.vibrate)navigator.vibrate(15);
+  if(combo>=7) haptic('combo7');
+  else if(combo>=5) haptic('combo5');
+  else if(combo>=3) haptic('combo3');
 }
 
 /* ── SOUND TOGGLE ──────────────────────────────────── */
@@ -1049,7 +1073,8 @@ function loop(ts){
     gs.lives--;
     updateLivesUI();
     showMiss();
-    if(gs.lives<=0){ endGame(); return; }
+    haptic('miss');
+    if(gs.lives<=0){ haptic('gameover'); endGame(); return; }
     gs.target=newTarget(); gs.tLeft=gs.maxTT;
     ensureTarget(W,H);
   }
@@ -1155,9 +1180,10 @@ function handleTap(e){
       document.getElementById('golden-alert').classList.remove('show');
       gs.floaters.push({x:hit.x,y:hit.y-12,txt:`✦ +${earned}`,pos:true,age:0,sz:32});
       beep(1400,'sine',.2,.25);beep(1800,'sine',.15,.2,.08);
-      if(navigator.vibrate)navigator.vibrate([30,15,30,15,60]);
+      haptic('golden');
     } else {
       gs.floaters.push({x:hit.x,y:hit.y-12,txt:mult>1?`+${earned} ×${mult}`:`+${earned}`,pos:true,age:0,sz:mult>1?26:22});
+      haptic(mult>=7?'combo7':mult>=5?'combo5':mult>=3?'combo3':'correct');
       if(mult>1)SFX.combo();else SFX.correct();
     }
     checkMilestone(gs.score);
@@ -1165,9 +1191,12 @@ function handleTap(e){
     const cv2=document.getElementById('cv');
     ensureTarget(cv2.width,cv2.height);
   }else{
-    gs.combo=0;gs.score-=hit.number;
-    gs.floaters.push({x:hit.x,y:hit.y-12,txt:`-${hit.number}`,pos:false,age:0});
-    SFX.wrong();
+    gs.combo=0; gs.score-=hit.number; gs.lives--;
+    gs.floaters.push({x:hit.x,y:hit.y-12,txt:`-${hit.number} ☠`,pos:false,age:0,sz:22});
+    updateLivesUI();
+    showMiss();
+    haptic('wrong');
+    if(gs.lives<=0){ endGame(); return; }
   }
 }
 const cv=document.getElementById('cv');
