@@ -23,12 +23,14 @@ body{display:flex;align-items:stretch;justify-content:center}
   color:#fff;overflow:hidden;position:relative;
   padding-top:env(safe-area-inset-top);
   padding-bottom:env(safe-area-inset-bottom);
+  background:#000814;
 }
 
 /* ══ MENU ═══════════════════════════════════════════ */
 #menu-screen{
-  flex:1;display:flex;flex-direction:column;
-  position:relative;overflow:hidden;
+  position:absolute;inset:0;
+  display:flex;flex-direction:column;
+  z-index:100;overflow:hidden;
 }
 #splash-bg{
   position:absolute;inset:0;
@@ -130,7 +132,8 @@ body{display:flex;align-items:stretch;justify-content:center}
 }
 
 /* ══ PLAY WRAP ═══════════════════════════════════════ */
-#play-wrap{flex:1;display:flex;flex-direction:column;overflow:hidden;background:#000814}
+#play-wrap{position:absolute;inset:0;display:none;flex-direction:column;overflow:hidden;background:#000814;z-index:50}
+#play-wrap.active{display:flex}
 
 .hud{
   padding:8px 16px;display:flex;align-items:center;justify-content:space-between;
@@ -266,11 +269,13 @@ body{display:flex;align-items:stretch;justify-content:center}
   text-align:center;font-style:italic;position:relative;
 }
 #go-screen{
-  flex:1;display:flex;flex-direction:column;
+  position:absolute;inset:0;z-index:75;
+  display:none;flex-direction:column;
   align-items:center;justify-content:center;
   gap:16px;padding:24px;
-  background:#000814;position:relative;
+  background:#000814;
 }
+#go-screen.active{display:flex;}
 /* Faint splash watermark on go screen */
 #go-bg{
   position:absolute;inset:0;
@@ -355,7 +360,7 @@ body{display:flex;align-items:stretch;justify-content:center}
   </div>
 
   <!-- ══ PLAYING ════════════════════════════════════════ -->
-  <div id="play-wrap" style="display:none">
+  <div id="play-wrap">
     <div id="miss-flash"></div>
     <div id="combo-glow"></div>
     <div id="milestone-flash"></div>
@@ -407,7 +412,7 @@ body{display:flex;align-items:stretch;justify-content:center}
   </div>
 
   <!-- ══ GAME OVER ══════════════════════════════════════ -->
-  <div id="go-screen" style="display:none">
+  <div id="go-screen">
     <div id="go-bg"></div>
     <div class="go-title">GAME OVER</div>
     <div class="final-lbl">FINAL SCORE</div>
@@ -647,16 +652,20 @@ function pickNumber() {
 function findSpawnPos(W, H, r, overrideX, overrideY) {
   if (overrideX !== undefined) return [overrideX, overrideY];
   const active = gs.bubbles.filter(b=>!b.popped);
-  let bestX = rnd(r+16, W-r-16), bestY = H+r+6, bestDist = -1;
-  for (let attempt=0; attempt<6; attempt++) {
-    const tx = rnd(r+16, W-r-16);
-    const ty = H+r+6 + attempt*8;
+  let bestX = rnd(r+16, W-r-16), bestY = H+r+6, bestDist = -Infinity;
+  for (let attempt=0; attempt<12; attempt++) {
+    const tx = rnd(r+20, W-r-20);
+    const ty = H + r + 6 + attempt * 4;
     let minDist = Infinity;
     for (const b of active) {
-      const d = Math.hypot(tx-b.x, ty-b.y) - r - b.radius;
+      const d = Math.hypot(tx-b.x, ty-b.y) - r - b.radius - 8;
       if (d < minDist) minDist = d;
     }
-    if (minDist > bestDist) { bestDist=minDist; bestX=tx; bestY=ty; }
+    if (active.length === 0 || minDist > bestDist) {
+      bestDist = minDist;
+      bestX = tx; bestY = ty;
+    }
+    if (bestDist > r * 0.6) break; // good enough gap found
   }
   return [bestX, bestY];
 }
@@ -789,8 +798,9 @@ const MAX_LIVES = 3;
 
 function updateLivesUI() {
   for (let i = 0; i < MAX_LIVES; i++) {
-    document.getElementById('life-' + i)
-      .classList.toggle('lost', i >= gs.lives);
+    const el = document.getElementById('life-' + i);
+    if (!el) continue;
+    el.classList.toggle('lost', i >= gs.lives);
   }
 }
 
@@ -1128,8 +1138,9 @@ function startGame(){
   document.getElementById('combo-glow').classList.remove('hot');
   document.querySelector('.timer-bar')?.classList.remove('pulse');
   document.getElementById('milestone-txt').style.opacity='0';
-  document.getElementById('go-screen').style.display='none';
-  document.getElementById('play-wrap').style.display='flex';
+  document.getElementById('go-screen').classList.remove('active');
+  document.getElementById('menu-screen').style.display='none';
+  document.getElementById('play-wrap').classList.add('active');
   updateLivesUI();
   document.getElementById('mode-lbl').textContent=MODES[selMode].label;
   updateScoreUI();updateTargetUI();
@@ -1161,16 +1172,16 @@ function endGame(){
   document.getElementById('go-level').textContent=lvl+'/'+CFG.LEVELS;
   document.getElementById('go-combo').textContent=bc+'×';
   document.getElementById('go-acc').textContent=acc+'%';
-  document.getElementById('play-wrap').style.display='none';
-  document.getElementById('go-screen').style.display='flex';
+  document.getElementById('play-wrap').classList.remove('active');
+  document.getElementById('go-screen').classList.add('active');
 }
 
 function showMenu(){
   if(gs)gs.running=false;
   if(raf){cancelAnimationFrame(raf);raf=null;}
   refreshBestUI();
-  document.getElementById('go-screen').style.display='none';
-  document.getElementById('play-wrap').style.display='none';
+  document.getElementById('go-screen').classList.remove('active');
+  document.getElementById('play-wrap').classList.remove('active');
   document.getElementById('menu-screen').style.display='flex';
 }
 
