@@ -696,20 +696,54 @@ function spawnBub(W, H, overrides={}) {
   });
 }
 
-// Guarantee the current target exists somewhere visible
+// Unlock color shifting on all bubbles
+function unlockAllColors() {
+  for (const b of gs.bubbles) b.colorLocked = false;
+}
+
+// Guarantee target is visible AND color-locked so it can't shift away
 function ensureTarget(W, H) {
   const tgt = gs.target;
-  const exists = gs.bubbles.some(b =>
-    !b.popped && b.number===tgt.number && b.color.name===tgt.color.name
+  // Unlock all first
+  unlockAllColors();
+
+  // Find existing match in visible area
+  const visible = gs.bubbles.find(b =>
+    !b.popped &&
+    b.number === tgt.number &&
+    b.color.name === tgt.color.name &&
+    b.y < H + b.radius  // actually on or entering screen
   );
-  if (!exists) {
-    spawnBub(W, H, {
-      color:  tgt.color,
-      number: tgt.number,
-      x: rnd(60, (W||360)-60),
-      y: (H||600) * rnd(0.5, 0.78),
-    });
+
+  if (visible) {
+    visible.colorLocked = true; // freeze its color
+    return;
   }
+
+  // None found — spawn one directly in the visible play area
+  const r = rndI(28, 44);
+  const safeW = W || 360;
+  const safeH = H || 600;
+  const bub = {
+    id: gs.nid++,
+    x: rnd(r + 30, safeW - r - 30),
+    y: safeH * rnd(0.35, 0.65), // mid-screen, immediately visible
+    radius: r,
+    color:  tgt.color,
+    number: tgt.number,
+    speed:  lerp(CFG.BV, CFG.MV, (gs.level-1)/(CFG.LEVELS-1)) * rnd(0.7, 1.1),
+    wphs: rnd(0, Math.PI*2), wspd: rnd(0.6,1.4), wamp: rnd(2,7),
+    opacity: 1, popped: false, pAge: 0,
+    colorTimer: 99999, colorLocked: true, // won't shift while target
+    flash: 0,
+    shapeFrom: pick(SHAPE_TYPES),
+    shapeTo:   pick(SHAPE_TYPES),
+    morphT: 0, morphSpd: rnd(0.0003, 0.0007),
+    rot: rnd(0, Math.PI*2), rotSpd: rnd(-0.0005, 0.0005),
+  };
+  bub.ptsFrom = getShapePts(bub.shapeFrom, r);
+  bub.ptsTo   = getShapePts(bub.shapeTo,   r);
+  gs.bubbles.push(bub);
 }
 
 /* ── DRAW BUBBLE ───────────────────────────────────── */
@@ -762,6 +796,18 @@ function drawBubble(ctx, b) {
     ctx.globalAlpha = op * b.flash * 0.75;
     traceShape(ctx, x, y, b, 1.12);
     ctx.strokeStyle='rgba(255,255,255,0.9)'; ctx.lineWidth=3; ctx.stroke();
+  }
+
+  // Target locked indicator — subtle outer pulse so player can find it
+  if (b.colorLocked) {
+    const pulse = 0.3 + 0.3 * Math.abs(Math.sin(Date.now() * 0.005));
+    ctx.globalAlpha = op * pulse;
+    traceShape(ctx, x, y, b, 1.22);
+    ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([4, 4]);
+    ctx.stroke();
+    ctx.setLineDash([]);
   }
   ctx.restore();
 }
@@ -979,17 +1025,24 @@ function loop(ts){
         b.morphT    = 0;
         b.morphSpd  = rnd(0.0003, 0.0008);
       }
-      b.colorTimer-=dt;
-      if(b.colorTimer<=0){
-        let next=pick(COLORS);
-        while(next.name===b.color.name) next=pick(COLORS);
-        b.color=next; b.flash=1;
-        b.colorTimer=rnd(800,1400);
+      // Color shift — skip if locked to current target
+      if (!b.colorLocked) {
+        b.colorTimer -= dt;
+        if (b.colorTimer <= 0) {
+          let next = pick(COLORS);
+          while (next.name === b.color.name) next = pick(COLORS);
+          b.color = next; b.flash = 1;
+          b.colorTimer = rnd(800, 1400);
+        }
+        if (b.flash > 0) b.flash = Math.max(0, b.flash - dt/220);
       }
-      if(b.flash>0) b.flash=Math.max(0, b.flash-dt/220);
     }
   }
   gs.bubbles=gs.bubbles.filter(b=>b.popped?b.pAge<420:b.y+b.radius>-12);
+
+  // Re-check target is findable every ~1.5s
+  gs.ensureTimer = (gs.ensureTimer||0) + dt;
+  if (gs.ensureTimer > 1500) { gs.ensureTimer = 0; ensureTarget(W, H); }
   gs.tLeft-=dt;
   if(gs.tLeft<=0){
     gs.combo=0; gs.misses++;
